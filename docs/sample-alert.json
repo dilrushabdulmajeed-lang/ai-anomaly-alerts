@@ -1,0 +1,17 @@
+{
+  "check_date": "2026-10-09",
+  "campaign_name": "Search | Competitor | UAE",
+  "severity": "high",
+  "likely_cause": "Auction-level CPC inflation. CPC rose roughly 92-169% in all 9 ad group/device segments at once, which rules out a localized issue. The two most likely explanations are (a) a targeted competitor raising bids to defend its own brand terms, which is common on competitor-conquest campaigns, or (b) a change to our bid strategy, such as a raised target, a switch to Maximize Clicks or Target Impression Share, or a removed max CPC cap. The data cannot tell these apart. Change history plus Auction Insights (impression share, overlap rate, outranking share, top-of-page rate versus the prior week) would separate (b) from (a).",
+  "evidence": "Campaign CPC was AED 5.37 vs 2.37 (+127%) and spend AED 596 vs 308 (+93%). CTR was flat at 6.95% vs 6.82%, so ad relevance and query mix did not change. Implied clicks fell about 15% (≈111 vs ≈130), so we paid more for less traffic. Conversions were 1.5 vs 1.8, and CPA was AED 402.9 vs 167.3 (+141%). The CPC rise was uniform across every segment: Long-tail/Mobile 5.84 vs 2.17 (+169%), Core/Tablet 5.81 vs 2.30 (+153%), Core/Desktop 5.70 vs 2.38 (+139%), Core/Mobile 5.31 vs 2.27 (+134%), Offers/Desktop 5.31 vs 2.32 (+129%), Long-tail/Desktop 5.53 vs 2.71 (+104%), Long-tail/Tablet 4.75 vs 2.37 (+100%), Offers/Mobile 4.84 vs 2.50 (+94%) and Offers/Tablet 4.54 vs 2.37 (+92%). Conversion volume is very low (1.5 vs 1.8), so the CPA change is partly noise. The CPC doubling is the robust signal.",
+  "excess_spend_aed": 288,
+  "recommended_actions": [
+    "Review the last 7-10 days of change history for bid strategy, target CPA/ROAS, Target Impression Share or max CPC cap changes, and revert any change that coincides with the CPC jump.",
+    "Pull Auction Insights for this campaign, current week vs prior week, to see whether one competitor's impression share, overlap or outranking share rose sharply, and check whether their brand terms are the costliest keywords.",
+    "Cap the damage today by applying a max CPC limit around AED 3.0-3.5 (via a portfolio strategy or manual bid ceiling) or cutting the daily budget back to roughly the AED 308 baseline. Pause the competitor keywords with the highest CPC and no conversions in the last 30 days."
+  ],
+  "summary": "Search | Competitor | UAE spent AED 596 against a AED 308 baseline (+93%, ~AED 288 excess). CPC more than doubled in every ad group and device while CTR held flat, so CPA rose 141% to AED 403. This points to auction-level pressure, either a competitor defending its brand terms or a change to our own bid strategy, so it needs a bid cap and a change-history and Auction Insights check today.",
+  "model": "claude-opus-5-5",
+  "input_tokens": 1293,
+  "output_tokens": 1590
+}

@@ -1,0 +1,350 @@
+{
+  "name": "Ads anomaly alert (AI)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6b89cc7c-eb73-4266-ac50-6137bbebbf4d",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        224
+      ],
+      "id": "c4a81081-04c5-4d60-b305-ec093d69ea1a",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "251e225a-9b65-4afc-8ff5-be5c792492a0",
+              "name": "=check_date",
+              "value": "={{ $today.minus({days: 1}).toFormat('yyyy-MM-dd') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        256,
+        112
+      ],
+      "id": "6d89e4ba-c839-4b30-8d1e-19e22e06e09e",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": " http://clickhouse:8123/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "= WITH\n    toDate('{{ $json.check_date }}') AS d,\n    base AS (\n      SELECT\n        campaign_id, ad_group, device,\n        sumIf(cost, date = d)                                   AS cost_d,\n        sumIf(clicks, date = d)                                 AS clicks_d,\n        sumIf(impressions, date = d)                            AS impr_d,\n        sumIf(conversions, date = d)                            AS conv_d,\n        sumIf(cost, date BETWEEN d - 7 AND d - 1) / 7           AS cost_b,\n        sumIf(clicks, date BETWEEN d - 7 AND d - 1) / 7         AS clicks_b,\n        sumIf(impressions, date BETWEEN d - 7 AND d - 1) / 7    AS impr_b,\n        sumIf(conversions, date BETWEEN d - 7 AND d - 1) / 7    AS conv_b\n      FROM analytics.ads_daily FINAL\n      WHERE date BETWEEN d - 7 AND d\n      GROUP BY campaign_id, ad_group, device\n    ),\n    camp AS (\n      SELECT\n        campaign_id,\n        sum(cost_d) AS spend, sum(cost_b) AS spend_base,\n        sum(cost_d) / nullIf(sum(clicks_d), 0) AS cpc, sum(cost_b) / nullIf(sum(clicks_b), 0) AS\n  cpc_base,\n        sum(clicks_d) / nullIf(sum(impr_d), 0) AS ctr, sum(clicks_b) / nullIf(sum(impr_b), 0) AS\n  ctr_base,\n        sum(conv_d) AS conv, sum(conv_b) AS conv_base,\n        sum(cost_d) / nullIf(sum(conv_d), 0) AS cpa, sum(cost_b) / nullIf(sum(conv_b), 0) AS cpa_base,\n        arrayStringConcat(groupArray(concat(ad_group, '/', device, ': CPC ',\n          toString(round(cost_d / nullIf(clicks_d, 0), 2)), ' vs ', toString(round(cost_b /\n  nullIf(clicks_b, 0), 2)))), '; ') AS breakdown\n      FROM base\n      GROUP BY campaign_id\n    )\n  SELECT\n    toString(d)                         AS check_date,\n    c.campaign_name, c.campaign_type, c.objective, c.market,\n    round(spend, 0) AS spend, round(spend_base, 0) AS spend_base, round((spend / spend_base - 1) * 100)\n  AS spend_chg_pct,\n    round(cpc, 2) AS cpc, round(cpc_base, 2) AS cpc_base, round((cpc / cpc_base - 1) * 100) AS\n  cpc_chg_pct,\n    round(ctr * 100, 2) AS ctr_pct, round(ctr_base * 100, 2) AS ctr_base_pct,\n    round(conv, 1) AS conv, round(conv_base, 1) AS conv_base,\n    round(cpa, 1) AS cpa, round(cpa_base, 1) AS cpa_base, round((cpa / cpa_base - 1) * 100) AS\n  cpa_chg_pct,\n    breakdown\n  FROM camp\n  INNER JOIN analytics.campaigns AS c FINAL USING (campaign_id)\n  WHERE spend_base > 20\n    AND (spend / spend_base - 1 > 0.4 OR cpc / cpc_base - 1 > 0.4 OR cpa / cpa_base - 1 > 0.4)\n  AND (SELECT count() FROM analytics.marketing_calendar FINAL WHERE d BETWEEN start_date AND end_date) = 0\n  ORDER BY greatest(toFloat64(spend_chg_pct), toFloat64(cpc_chg_pct), toFloat64(ifNull(cpa_chg_pct,\n  0))) DESC\n  SETTINGS output_format_json_quote_64bit_integers = 0\n  FORMAT JSON\n  ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        112
+      ],
+      "id": "069abd85-9d64-46d2-9133-b0aa12578525",
+      "name": "Detect anomalies",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "TfAaWEbdjhye6fu3",
+          "name": "ClickHouse (n8n_loader)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a88fa76f-b978-4968-8837-5f24bf96d194",
+              "leftValue": "={{ $json.rows }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        704,
+        112
+      ],
+      "id": "f2327e72-ae4b-4090-bcf8-dfc0a0cd516f",
+      "name": "Any anomalies?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Builds the Anthropic Messages API request: flagged campaigns in, structured diagnosis out.\n  const flagged = $('Detect anomalies').first().json.data;\n  const checkDate = $('Config').first().json.check_date;\n\n  const system = `You are a senior paid-search analyst for a GCC e-commerce advertiser (currency AED).\n  A rules engine has flagged campaigns whose spend, CPC or CPA rose more than 40% above their trailing 7-day average.\n  For each flagged campaign: explain the most likely cause using only the data provided, cite the numbers that support it,\n  estimate excess spend versus baseline (spend minus spend_base, minimum 0), rate severity, and give 1-3 concrete actions\n  a PPC manager could take today.\n  The breakdown field lists CPC by ad group/device versus baseline: a rise across every segment points to auction-level\n  pressure (competitor bidding, bid strategy change); a rise in one segment points to a localized issue.\n  If the data cannot distinguish between causes, say what additional data would.\n  Keep the summary to 2-3 sentences suitable for a team chat message.`;\n\n  const schema = {\n    type: 'object',\n    additionalProperties: false,\n    required: ['summary', 'alerts'],\n    properties: {\n      summary: { type: 'string' },\n      alerts: {\n        type: 'array',\n        items: {\n          type: 'object',\n          additionalProperties: false,\n          required: ['campaign_name', 'severity', 'likely_cause', 'evidence', 'excess_spend_aed', 'recommended_actions'],\n          properties: {\n            campaign_name: { type: 'string' },\n            severity: { type: 'string', enum: ['low', 'medium', 'high'] },\n            likely_cause: { type: 'string' },\n            evidence: { type: 'string' },\n            excess_spend_aed: { type: 'number' },\n            recommended_actions: { type: 'array', items: { type: 'string' } },\n          },\n        },\n      },\n    },\n  };\n\n  const body = {\n    model: 'claude-opus-5-5',\n    max_tokens: 16000,\n    fallbacks: 'default',   // if Claude declines, the API retries on another model automatically\n    output_config: { effort: 'medium', format: { type: 'json_schema', schema } },\n    system,\n    messages: [{\n      role: 'user',\n      content: `Check date: ${checkDate}\\nFlagged campaigns:\\n${JSON.stringify(flagged, null, 2)}`,\n    }],\n  };\n\n  return [{ json: { body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        -32
+      ],
+      "id": "20cb46f3-b01d-4c68-b5e4-a5fe676cec52",
+      "name": "Build Claude request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": " https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": " anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "= {{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1200,
+        -32
+      ],
+      "id": "955f3b3d-9252-483c-9f15-7fd969f55efd",
+      "name": "Ask Claude",
+      "credentials": {
+        "anthropicApi": {
+          "id": "ZHlf8clCjyrNg84g",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validates Claude's reply and turns it into one item per alert.\n  const r = $input.first().json;\n  const checkDate = $('Config').first().json.check_date;\n\n  if (r.stop_reason === 'refusal') {\n    throw new Error(`Claude declined (${r.stop_details?.category}): ${r.stop_details?.explanation}`);\n  }\n  if (r.stop_reason === 'max_tokens') throw new Error('Claude response was truncated (max_tokens)');\n\n  const textBlock = (r.content || []).find(b => b.type === 'text');\n  if (!textBlock) throw new Error('No text block in Claude response');\n  const out = JSON.parse(textBlock.text);\n\n  return out.alerts.map(a => ({ json: {\n    check_date: checkDate,\n    ...a,\n    summary: out.summary,\n    model: r.model,\n    input_tokens: r.usage.input_tokens,\n    output_tokens: r.usage.output_tokens,\n  }}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        -32
+      ],
+      "id": "b5e82475-1efb-4f1a-99f4-ed03805a1ac3",
+      "name": "Parse Claude response"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://clickhouse:8123/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "INSERT INTO analytics.ads_anomaly_alerts FORMAT JSONEachRow"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1648,
+        -128
+      ],
+      "id": "afed5603-adac-4a77-ba47-095445cacb63",
+      "name": "Log alert to ClickHouse",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "TfAaWEbdjhye6fu3",
+          "name": "ClickHouse (n8n_loader)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "<YOUR_TELEGRAM_CHAT_ID>",
+        "text": "= {{ $json.severity === 'high' ? '🔴' : $json.severity === 'medium' ? '🟠' : '🟡' }} Ads anomaly: {{ $json.severity.toUpperCase() }}\n  📅 {{ $json.check_date }} · {{ $json.campaign_name }}\n  💸 Excess spend: ~AED {{ $json.excess_spend_aed }}\n\n  🧠 Likely cause:\n  {{ $json.likely_cause }}\n\n  ✅ Actions:\n  {{ $json.recommended_actions.map((a, i) => (i + 1) + '. ' + a).join('\\n') }}\n\n  🤖 {{ $json.model }} · {{ $json.input_tokens + $json.output_tokens }} tokens",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1648,
+        80
+      ],
+      "id": "073aace8-ac92-4b59-8027-2211cac679e0",
+      "name": "Send Telegram alert",
+      "webhookId": "586aa3e1-3d00-4858-8273-2cfd88c83d04",
+      "credentials": {
+        "telegramApi": {
+          "id": "rYYOB8iJo74sdD9E",
+          "name": "Telegram Ads Alert Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Detect anomalies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect anomalies": {
+      "main": [
+        [
+          {
+            "node": "Any anomalies?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any anomalies?": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Ask Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude response": {
+      "main": [
+        [
+          {
+            "node": "Log alert to ClickHouse",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Telegram alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log alert to ClickHouse": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
